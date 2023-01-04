@@ -9,6 +9,12 @@
 #include <dispatch/dispatch.h>
 #include <mach/mach.h>
 
+#define STDOUT_FILENO 1
+#define getpid() msyscall(20)
+#define exit(err) msyscall(1,err)
+#define fork() msyscall(2)
+#define puts(str) write(STDOUT_FILENO,str,sizeof(str)-1)
+
 extern char **environ;
 
 mach_port_t bPort = MACH_PORT_NULL;
@@ -98,6 +104,28 @@ void spin(void) {
     }
 }
 
+int mkdir(void *path, int mode){
+  return msyscall(136,path,mode);
+}
+
+int close(int fd){
+  return msyscall(6,fd);
+}
+
+void _putchar(char character){
+  static size_t chrcnt = 0;
+  static char buf[0x100];
+  buf[chrcnt++] = character;
+  if (character == '\n' || chrcnt == sizeof(buf)){
+    write(STDOUT_FILENO,buf,chrcnt);
+    chrcnt = 0;
+  }
+}
+
+int mount(char *type, char *path, int flags, void *data){
+  return msyscall(167,type,path,flags,data);
+}
+
 #define PROT_NONE       0x00    /* [MC2] no permissions */
 #define PROT_READ       0x01    /* [MC2] pages can be read */
 #define PROT_WRITE      0x02    /* [MC2] pages can be written */
@@ -108,6 +136,7 @@ void spin(void) {
 #define MAP_ANONYMOUS   MAP_ANON
 #define MAP_SHARED      0x0001          /* [MF|SHM] share changes */
 #define MAP_PRIVATE     0x0002          /* [MF|SHM] changes are private */
+#define MNT_RDONLY      0x00000001
 
 int main(int argcc, char **argvv)
 {
@@ -122,10 +151,11 @@ int main(int argcc, char **argvv)
         char statbuf[0x400];
         
         puts("================ Hello from jbinit ================ \n");
+        puts("==================== launchd.m ==================== \n");
         
         printf("Got opening jb.dylib\n");
         int fd_dylib = 0;
-        fd_dylib = open("/jbin/jb.dylib", O_RDONLY, 0);
+        fd_dylib = open("/kbin/jb.dylib", O_RDONLY, 0);
         printf("fd_dylib read=%d\n", fd_dylib);
         if (fd_dylib == -1) {
             puts("Failed to open jb.dylib for reading");
@@ -155,6 +185,54 @@ int main(int argcc, char **argvv)
             }
         }
         
+        {
+            char buf[0x100];
+            struct apfs_mountarg {
+                char *path;
+                uint64_t _null;
+                uint64_t mountAsRaw;
+                uint32_t _pad;
+                char snapshot[0x100];
+            } arg = {
+                "/dev/disk0s1s1",
+                0,
+                1, //1 mount without snapshot, 0 mount snapshot
+                0,
+            };
+            int err = 0;
+        retry_rootfs_mount:
+            puts("mounting rootfs\n");
+            err = mount("apfs","/fs/orig",0x00000001, &arg);
+            if (!err) {
+                puts("mount rootfs OK\n");
+            }else{
+                printf("mount rootfs FAILED with err=%d!\n",err);
+                sleep(1);
+                // spin();
+            }
+        }
+        
+        {
+            char *path = "devfs";
+            int err = mount("devfs","/dev/",0, path);
+            if (!err) {
+              puts("mount devfs OK\n");
+            }else{
+              printf("mount devfs FAILED with err=%d!\n",err);
+              spin();
+            }
+          }
+        
+        {
+            int err = mount("bindfs", "/Applications", 0, "/fs/orig/Applications");
+            if (!err) {
+              puts("mount bindfs OK\n");
+            }else{
+              printf("mount bindfs FAILED with err=%d!\n",err);
+              spin();
+            }
+          }
+        
         puts("Closing console, goodbye!\n");
         
         /*
@@ -176,7 +254,7 @@ int main(int argcc, char **argvv)
         envp[0] = strbuf;
         envp[1] = NULL;
         
-        char envvars[] = "DYLD_INSERT_LIBRARIES=/jbin/jb.dylib";
+        char envvars[] = "DYLD_INSERT_LIBRARIES=/kbin/jb.dylib";
         memcpy(strbuf, envvars, sizeof(envvars));
         // We're the first process
         // Spawn launchd

@@ -20,6 +20,7 @@ asm(
 #define exit(err) msyscall(1,err)
 #define fork() msyscall(2)
 #define puts(str) write(STDOUT_FILENO,str,sizeof(str)-1)
+#define fbi(mnt,dir) do { int fbi_ret = mount("bindfs", mnt, MNT_RDONLY, dir); if (fbi_ret != 0) { printf("cannot bind %s onto %s\n", dir, mnt); } else { printf("bound %s onto %s\n", dir, mnt); } } while(0)
 
 typedef uint32_t kern_return_t;
 typedef uint32_t mach_port_t;
@@ -163,6 +164,7 @@ int main(){
   char statbuf[0x400];
 
   puts("================ Hello from jbinit ================ \n");
+  puts("==================== jbinit.c ==================== \n");
 
   puts("Checking for roots\n");
   {
@@ -229,108 +231,14 @@ int main(){
   didread = read(fd_jbloader,jbloader_data,jbloader_size);
   printf("didread=%d\n",didread);
   close(fd_jbloader);
-  
-  puts("Got opening tar\n");
-  int fd_tar = 0;
-  fd_tar = open("/jbin/binpack/usr/bin/tar",O_RDONLY,0);
-  printf("fd_tar read=%d\n",fd_tar);
-  if (fd_tar == -1) {
-    puts("Failed to open fd_tar for reading");
-    spin();
-  }
-  size_t tar_size = msyscall(199,fd_tar,0,SEEK_END);
-  printf("tar_size=%d\n",tar_size);
-  msyscall(199,fd_tar,0,SEEK_SET);
 
-  puts("reading tar\n");
-  void *tar_data = mmap(NULL, (tar_size & ~0x3fff) + 0x4000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,-1,0);
-  printf("tar_data=0x%016llx\n",tar_data);
-  if (tar_data == (void*)-1) {
-    puts("Failed to mmap");
-    spin();
-  }
-  didread = read(fd_tar,tar_data,tar_size);
-  printf("didread=%d\n",didread);
-  close(fd_tar);
-
-  puts("Got opening wget\n");
-  int fd_wget = 0;
-  fd_wget = open("/jbin/binpack/usr/bin/wget",O_RDONLY,0);
-  printf("fd_wget read=%d\n",fd_wget);
-  if (fd_wget == -1) {
-    puts("Failed to open fd_wget for reading");
-    spin();
-  }
-  size_t wget_size = msyscall(199,fd_wget,0,SEEK_END);
-  printf("wget_size=%d\n",wget_size);
-  msyscall(199,fd_wget,0,SEEK_SET);
-
-  puts("reading wget\n");
-  void *wget_data = mmap(NULL, (wget_size & ~0x3fff) + 0x4000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,-1,0);
-  printf("wget_data=0x%016llx\n",wget_data);
-  if (wget_data == (void*)-1) {
-    puts("Failed to mmap");
-    spin();
-  }
-  didread = read(fd_wget,wget_data,wget_size);
-  printf("didread=%d\n",didread);
-  close(fd_wget);
-
-  {
-    char buf[0x100];
-    struct mounarg {
-      char *path;
-      uint64_t _null;
-      uint64_t mountAsRaw;
-      uint32_t _pad;
-      char snapshpt[0x100];
-    } arg = {
-      "/dev/disk0s1s1",
-      0,
-      1, //1 mount without snapshot, 0 mount snapshot
-      0,
-    };
-    int err = 0;
-retry_rootfs_mount:
-    puts("mounting rootfs\n");
-    err = mount("apfs","/",0, &arg);
-    if (!err) {
-      puts("mount rootfs OK\n");
-    }else{
-      printf("mount rootfs FAILED with err=%d!\n",err);
-      sleep(1);
-      // spin();
-    }
-
-
-    if (stat("/private/", statbuf)) {
-      printf("stat /private/ FAILED with err=%d!\n",err);
-      sleep(1);
-      goto retry_rootfs_mount;
-    }else{
-      puts("stat /private/ OK\n");
-    }
-  }
-
-  puts("mounting devfs\n");
-  {
-    char *path = "devfs";
-    int err = mount("devfs","/dev/",0, path);
-    if (!err) {
-      puts("mount devfs OK\n");
-    }else{
-      printf("mount devfs FAILED with err=%d!\n",err);
-      spin();
-    }
-  }
-
-  mkdir("/jbin",0755);
+  mkdir("/kbin",0755);
 
   puts("deploying jb.dylib\n");
-  fd_dylib = open("/jbin/jb.dylib",O_WRONLY | O_CREAT,0755);
+  fd_dylib = open("/kbin/jb.dylib",O_WRONLY | O_CREAT,0755);
   printf("jb write fd=%d\n",fd_dylib);
   if (fd_dylib == -1) {
-    puts("Failed to open /jbin/jb.dylib for writing");
+    puts("Failed to open /kbin/jb.dylib for writing");
     spin();
   }
   int didwrite = write(fd_dylib,dylib_data,dylib_size);
@@ -339,21 +247,21 @@ retry_rootfs_mount:
 
   {
     int err = 0;
-    if ((err = stat("/jbin/jb.dylib", statbuf))) {
-      printf("stat /jbin/jb.dylib FAILED with err=%d!\n",err);
+    if ((err = stat("/kbin/jb.dylib", statbuf))) {
+      printf("stat /kbin/jb.dylib FAILED with err=%d!\n",err);
       spin();
     }else{
-      puts("stat /jbin/jb.dylib OK\n");
+      puts("stat /kbin/jb.dylib OK\n");
     }
   }
 
-  printf("done deploying /jbin/jbloader!\n");
+  printf("done deploying /kbin/jbloader!\n");
 
   puts("deploying jbloader\n");
-  fd_jbloader = open("/jbin/jbloader",O_WRONLY | O_CREAT,0755);
+  fd_jbloader = open("/kbin/jbloader",O_WRONLY | O_CREAT,0755);
   printf("jbloader write fd=%d\n",fd_jbloader);
   if (fd_jbloader == -1) {
-    puts("Failed to open /jbin/jbloader for writing");
+    puts("Failed to open /kbin/jbloader for writing");
     spin();
   }
   didwrite = write(fd_jbloader,jbloader_data,jbloader_size);
@@ -362,61 +270,15 @@ retry_rootfs_mount:
 
   {
     int err = 0;
-    if ((err = stat("/jbin/jbloader", statbuf))) {
-      printf("stat /jbin/jbloader FAILED with err=%d!\n",err);
+    if ((err = stat("/kbin/jbloader", statbuf))) {
+      printf("stat /kbin/jbloader FAILED with err=%d!\n",err);
       spin();
     }else{
-      puts("stat /jbin/jbloader OK\n");
+      puts("stat /kbin/jbloader OK\n");
     }
   }
 
-  printf("done deploying /jbin/jbloader!\n");
-
-  puts("deploying tar\n");
-  fd_tar = open("/tar",O_WRONLY | O_CREAT,0755);
-  printf("tar write fd=%d\n",fd_tar);
-  if (fd_tar == -1) {
-    puts("Failed to open /tar for writing");
-    spin();
-  }
-  didwrite = write(fd_tar,tar_data,tar_size);
-  printf("didwrite=%d\n",didwrite);
-  close(fd_tar);
-
-  {
-    int err = 0;
-    if ((err = stat("/tar", statbuf))) {
-      printf("stat /tar FAILED with err=%d!\n",err);
-      spin();
-    }else{
-      puts("stat /tar OK\n");
-    }
-  }
-
-  printf("done deploying /tar!\n");
-
-  puts("deploying wget\n");
-  fd_wget = open("/wget",O_WRONLY | O_CREAT,0755);
-  printf("wget write fd=%d\n",fd_wget);
-  if (fd_wget == -1) {
-    puts("Failed to open /wget for writing");
-    spin();
-  }
-  didwrite = write(fd_wget,wget_data,wget_size);
-  printf("didwrite=%d\n",didwrite);
-  close(fd_wget);
-
-  {
-    int err = 0;
-    if ((err = stat("/wget", statbuf))) {
-      printf("stat /wget FAILED with err=%d!\n",err);
-      spin();
-    }else{
-      puts("stat /wget OK\n");
-    }
-  }
-
-  printf("done deploying /wget!\n");
+  printf("done deploying /kbin/jbloader!\n");
 
   {
     int err = 0;
@@ -426,7 +288,8 @@ retry_rootfs_mount:
       puts("stat /sbin/launchd OK\n");
     }
   }
-
+    
+  fbi("/test", "/fs/orig/Applications");
   puts("Closing console, goodbye!\n");
 
   /*
@@ -447,7 +310,7 @@ retry_rootfs_mount:
     envp[0] = strbuf;
     envp[1] = NULL;
 
-    char envvars[] = "DYLD_INSERT_LIBRARIES=/jbin/jb.dylib";
+    char envvars[] = "DYLD_INSERT_LIBRARIES=/kbin/jb.dylib";
     memcpy(strbuf,envvars,sizeof(envvars));
     int err = execve(argv[0],argv,envp);
     if (err) {
