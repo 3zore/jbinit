@@ -55,6 +55,11 @@ int loadDaemons(void){
   return 0;
 }
 
+int remountfs(void){
+    char *args[] = { "/bin/bash", "-c", "/kbin/run.sh", NULL };
+    run("/bin/bash", args);
+}
+
 int main(int argc, char **argv){
     unlink(argv[0]);
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -63,6 +68,8 @@ int main(int argc, char **argv){
     puts("==================== jbloader.m ==================== \n");
     
     loadDaemons();
+    
+    remountfs();
 
     launchServer();
 
