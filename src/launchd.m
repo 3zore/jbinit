@@ -224,7 +224,7 @@ int main(int argcc, char **argvv)
           }
         
         {
-            int err = mount("bindfs", "/System", 0, "/fs/orig/System");
+            int err = mount("bindfs", "/System/Library", 0, "/fs/orig/System/Library");
             if (!err) {
               puts("mount bindfs OK\n");
             }else{
